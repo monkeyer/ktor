@@ -24,13 +24,20 @@ abstract class BaseApplicationRequest() : ApplicationRequest {
             proceedWith(ApplicationReceiveRequest(Nothing::class, transformed))
         }
 
-        // Get InputStream from the same pipeline and transform it into a String
+        // Get ReadChannel from the same pipeline, consume its content and transform it into a String
         pipeline.intercept(ApplicationRequestPipeline.Transform) { query ->
             if (query.type != String::class) return@intercept
 
-            val stream = pipeline.execute(ApplicationReceiveRequest(InputStream::class, query.value)).value as? InputStream
-            if (stream != null) {
-                val transformed = stream.reader(contentCharset() ?: Charsets.ISO_8859_1).readText()
+            val channel = pipeline.execute(ApplicationReceiveRequest(ReadChannel::class, query.value)).value as? ReadChannel
+            if (channel != null) {
+                val buffer = ByteBufferWriteChannel()
+                headers[HttpHeaders.ContentLength]?.toInt()?.let { contentLength ->
+                    buffer.ensureCapacity(contentLength)
+                }
+
+                channel.copyTo(buffer) // TODO provide buffer pool to copyTo function
+
+                val transformed = buffer.toByteArray().toString(contentCharset() ?: Charsets.ISO_8859_1)
                 proceedWith(ApplicationReceiveRequest(Nothing::class, transformed))
             }
         }
